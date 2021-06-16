@@ -1,5 +1,6 @@
 import time
 import threading
+import math
 
 from a_star import AStar
 from lsm6 import LSM6
@@ -77,6 +78,9 @@ SPEED_RESPONSE = 3300
 # you change this, you will have to adjust many other things.
 UPDATE_TIME = 0.01
 
+# The sensitivity of the gyroscope.
+GYROSCOPE_SENSITIVITY = 29
+
 # Take 100 measurements initially to calibrate the gyro.
 CALIBRATION_ITERATIONS = 100
 
@@ -102,6 +106,8 @@ class Balancer:
     self.running = False
     self.next_update = 0
     self.update_thread = None
+    self.pitch = 0
+    self.roll = 0
 
   def setup(self):
     self.imu.enable()
@@ -263,7 +269,7 @@ class Balancer:
     # perform the update at  100Hz.
     self.next_update += UPDATE_TIME
     now = time.clock_gettime(time.CLOCK_MONOTONIC_RAW)
-    time.sleep(self.next_update - now, 0)
+    time.sleep(max(self.next_update - now, 0))
 
   def getObservations(self):
     # update the sensors.
@@ -280,7 +286,41 @@ class Balancer:
     # to get the speed of the robot, we must integrate the distance traveled (which we read from the encoders.
 
     # return the gyro pitch, the encoder left count, encoder right count, angular speed, and speed.
-    return pitch, left_count, right_count, angular_speed, speed_left, speed_right
+    return pitch, angular_speed, None # should fix to return the motor speed instead of None.
+
+  def getPitch(self):
+    def complementaryFilter():
+      # function combines the accelerometer and the gyroscope for a more accurate reading of pitch.
+      # get the accelerometer data.
+      accelData = []
+      accelData.append(self.imu.a.x)
+      accelData.append(self.imu.a.y)
+      accelData.append(self.imu.a.z)
+
+      # get the gyroscope data.
+      gyroData = []
+      gyroData.append(self.imu.g.x)
+      gyroData.append(self.imu.g.y)
+      gyroData.append(self.imu.g.z)
+
+      # Using the data from the acclerometer gives a better estimate of the gyro.
+      pitchAcc = 0
+      rollAcc = 0
+
+      # calculate the angle around the angle
+      self.pitch += gyroData[0] / GYROSCOPE_SENSITIVITY * UPDATE_TIME
+      self.roll -= gyroData[1] / GYROSCOPE_SENSITIVITY * UPDATE_TIME
+
+      # compensate for the gyroscopic drift.
+      forceMagnitudeApprox = abs(accelData[0]) + abs(accelData[1]) + abs(accelData[2])
+      if (forceMagnitudeApprox > 8192 and forceMagnitudeApprox < 32768):
+        pitchAcc = math.atan2(accelData[1], accelData[2]) * 180 / math.pi
+        self.pitch = self.pitch * 0.98 + pitchAcc * 0.02
+
+        rollAcc = math.atan2(accelData[0], accelData[2]) * 180 / math.pi
+        self.roll = self.roll * 0.98 + rollAcc * 0.02
+    return complementaryFilter()
+
 
   def reset_encoders(self):
     self.distance_left = 0
@@ -348,11 +388,14 @@ for i in range(100):
     # throw into neural network to get action
     # action = NN.
     # take a random action for now.
-    action = .5
+    #action = .5
 
     # take the action.
-    obs = env.step(action)
+    #obs = env.step(action)
     # perform 100Hz update
+
+    env.update_sensors()
+    env.getPitch()
+    print(env.pitch)
     env.update100Hz()
-    #print(i, obs)
 env.stop()
