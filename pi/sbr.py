@@ -82,7 +82,7 @@ UPDATE_TIME = 0.01
 GYROSCOPE_SENSITIVITY = 29
 
 # Take 100 measurements initially to calibrate the gyro.
-CALIBRATION_ITERATIONS = 100
+CALIBRATION_ITERATIONS = 200
 
 class Balancer:
   def __init__(self):
@@ -107,19 +107,21 @@ class Balancer:
     self.next_update = 0
     self.update_thread = None
     self.pitch = 0
+    self.pitch_euler = 0
     self.roll = 0
+    self.roll_euler = 0
+    self.pitchAcc = 0
 
   def setup(self):
     self.imu.enable()
     time.sleep(1) # wait for IMU readings to stabilize
 
-    # calibrate the gyro
-    total = 0
+    self.roll = self.imu.g.x
+    self.pitch = self.imu.g.y
     for _ in range(CALIBRATION_ITERATIONS):
       self.imu.read()
-      total += self.imu.g.y
-      time.sleep(0.001)
-    self.g_y_zero = total / CALIBRATION_ITERATIONS
+      self.getPitchEuler()
+      time.sleep(UPDATE_TIME)
     self.calibrated = True
 
   def start(self):
@@ -308,19 +310,42 @@ class Balancer:
       rollAcc = 0
 
       # calculate the angle around the angle
-      self.pitch += gyroData[0] / GYROSCOPE_SENSITIVITY * UPDATE_TIME
-      self.roll -= gyroData[1] / GYROSCOPE_SENSITIVITY * UPDATE_TIME
+      self.roll += gyroData[0] / GYROSCOPE_SENSITIVITY * UPDATE_TIME
+      self.pitch -= gyroData[1] / GYROSCOPE_SENSITIVITY * UPDATE_TIME
 
       # compensate for the gyroscopic drift.
       forceMagnitudeApprox = abs(accelData[0]) + abs(accelData[1]) + abs(accelData[2])
       if (forceMagnitudeApprox > 8192 and forceMagnitudeApprox < 32768):
-        pitchAcc = math.atan2(accelData[1], accelData[2]) * 180 / math.pi
-        self.pitch = self.pitch * 0.98 + pitchAcc * 0.02
-
-        rollAcc = math.atan2(accelData[0], accelData[2]) * 180 / math.pi
+        rollAcc = math.atan2(accelData[1], accelData[2]) * 180 / math.pi
         self.roll = self.roll * 0.98 + rollAcc * 0.02
+
+        pitchAcc = math.atan2(accelData[0], accelData[2]) * 180 / math.pi
+        self.pitchAcc = pitchAcc
+        self.pitch = self.pitch * 0.98 + pitchAcc * 0.02
     return complementaryFilter()
 
+  def getPitchEuler(self):
+    # get pitch in degrees.
+    self.getPitch()
+
+    # convert degrees to radians.
+    roll_radians = self.roll * math.pi / 180
+    pitch_radians = self.pitch * math.pi / 180
+
+    # save the old values because we can use the old values to help find angular velocity.
+    self.prev_pitch_euler = self.pitch_euler
+    self.prev_roll_euler = self.roll_euler
+
+    # save the values.
+    self.pitch_euler = pitch_radians
+    self.roll_euler = roll_radians
+
+    # return the results too.
+    return self.pitch_euler
+
+  def getAngularSpeed(self):
+    self.angular_speed = self.pitch_euler - self.prev_pitch_euler
+    return self.angular_speed
 
   def reset_encoders(self):
     self.distance_left = 0
@@ -395,7 +420,8 @@ for i in range(100):
     # perform 100Hz update
 
     env.update_sensors()
-    env.getPitch()
-    print(env.pitch)
+    angle = env.getPitchEuler()
+    angular_speed = env.getAngularSpeed()
+    print("angle:", angle, ", angular_speed:", angular_speed, ", accel:", env.pitchAcc)
     env.update100Hz()
 env.stop()
