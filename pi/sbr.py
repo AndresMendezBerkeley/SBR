@@ -100,7 +100,11 @@ class Balancer:
     self.speed_right = 0
     self.drive_right = 0
     self.last_counts_right = 0
+
     self.motor_speed = 0
+    self.motor_speed_sim = 0 # the sim take different values than that of the motor.
+                             # we will just map the values to the correct range.
+
     self.balancing = False
     self.calibrated = False
     self.running = False
@@ -258,8 +262,25 @@ class Balancer:
 
   def step(self, action):
     if self.running:
+        # let dv be the the max change in velocity that we can assign at a given time.
+        dv = 0.1
+        # scale dv to a range of actions.
+        deltav = [-10.*dv, -5.*dv, -2.*dv, -0.1*dv, 0, 0.1*dv, 2.*dv, 5.*dv, 10.*dv][action]
+        # vt is the current motor speed of the motor and clamp range to max of motorSpeed.
+        vt = clamp(self.motor_speed + deltav, -51, 51)
+        self.motor_speed_sim = vt
+
+
+        # CATION: NOT SURE IF A_STAR.MOTORS(..., ...) TAKES IN A CHANGE IN SPEED OR THE CURRENT SPEED.
+        # CATION: NOT SURE IF A_STAR.MOTORS(..., ...) TAKES IN A CHANGE IN SPEED OR THE CURRENT SPEED.
+        # CATION: NOT SURE IF A_STAR.MOTORS(..., ...) TAKES IN A CHANGE IN SPEED OR THE CURRENT SPEED.
+        # CATION: NOT SURE IF A_STAR.MOTORS(..., ...) TAKES IN A CHANGE IN SPEED OR THE CURRENT SPEED.
+
+        # map the values from the range of +/-51 to +/-300.
+        self.motor_speed = map(self.motor_speed_sim, -51, 51, -MOTOR_SPEED_LIMIT, MOTOR_SPEED_LIMIT)
+
         # take an action.
-        self.a_star.motors(int(MOTOR_SPEED_LIMIT * action), int(MOTOR_SPEED_LIMIT * action))
+        self.a_star.motors(int(self.motor_speed), int(self.motor_speed))
 
         # now observe the results.
         obs = self.getObservations()
@@ -278,17 +299,16 @@ class Balancer:
     self.update_sensors()
 
     # get the pitch of the gyro
-    pitch = self.imu.g.y
+    pitch = self.getPitchEuler()
+
+    # get the angular speed.
+    angular_speed = self.getAngularSpeed()
 
     # get the left and right encoder counts.
-    (counts_left, counts_right) = self.a_star.read_encoders()
-
-    # to get the angular speed, we must integrate the gyro pitch over time.
-
-    # to get the speed of the robot, we must integrate the distance traveled (which we read from the encoders.
+    #(counts_left, counts_right) = self.a_star.read_encoders()
 
     # return the gyro pitch, the encoder left count, encoder right count, angular speed, and speed.
-    return pitch, angular_speed, None # should fix to return the motor speed instead of None.
+    return pitch, angular_speed, self.motor_speed_sim # should fix to return the motor speed instead of None.
 
   def getPitch(self):
     def complementaryFilter():
@@ -337,8 +357,9 @@ class Balancer:
     self.prev_roll_euler = self.roll_euler
 
     # save the values.
-    self.pitch_euler = pitch_radians
-    self.roll_euler = roll_radians
+    # shifting the values so that zero degrees is straight up.
+    self.pitch_euler = pitch_radians - (math.pi/2)
+    self.roll_euler = roll_radians - (math.pi/2)
 
     # return the results too.
     return self.pitch_euler
@@ -404,6 +425,8 @@ def subtract_16_bit(a, b):
     diff -= 0x10000
   return diff
 
+def map(x, in_min, in_max, out_min, out_max):
+    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
 
 env = Balancer()
 env.make()
