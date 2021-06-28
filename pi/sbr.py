@@ -431,6 +431,9 @@ def subtract_16_bit(a, b):
 def map(x, in_min, in_max, out_min, out_max):
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
 
+def clamp(n, minn, maxn):
+    return max(min(maxn, n), minn)
+
 # load the model.
 model = DQN.load("sbr")
 
@@ -457,12 +460,12 @@ for i in range(100):
     #motor_speed = env.
     #print("angle:", angle, ", angular_speed:", angular_speed, ", accel:", env.pitchAcc)
     env.update_sensors()
-    obs = self.getObservations()
+    obs = env.getObservations()
 
     # stop everything if the  pitch is too low.
     if obs[0] > 0.785398 or obs[0] < -0.785398:
         env.stop()
-        break()
+        break
 
     # get the action.
     action, _states = model.predict(obs)
