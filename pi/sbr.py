@@ -5,6 +5,9 @@ import math
 from a_star import AStar
 from lsm6 import LSM6
 
+from stable_baselines.deepq.policies import MlpPolicy
+from stable_baselines import DQN
+
 # This code was developed for a Balboa unit using 50:1 motors
 # and 45:21 plastic gears, for an overall gear ratio of 111.
 # Adjust the ratio below to scale various constants in the
@@ -428,10 +431,17 @@ def subtract_16_bit(a, b):
 def map(x, in_min, in_max, out_min, out_max):
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
 
+# load the model.
+model = DQN.load("sbr")
+
+# create the environment.
 env = Balancer()
 env.make()
+
+# initialize the first observation.
 obs = env.reset()
 
+# run the model.
 for i in range(100):
     # throw into neural network to get action
     # action = NN.
@@ -442,9 +452,26 @@ for i in range(100):
     #obs = env.step(action)
     # perform 100Hz update
 
+    #angle = env.getPitchEuler()
+    #angular_speed = env.getAngularSpeed()
+    #motor_speed = env.
+    #print("angle:", angle, ", angular_speed:", angular_speed, ", accel:", env.pitchAcc)
     env.update_sensors()
-    angle = env.getPitchEuler()
-    angular_speed = env.getAngularSpeed()
-    print("angle:", angle, ", angular_speed:", angular_speed, ", accel:", env.pitchAcc)
+    obs = self.getObservations()
+
+    # stop everything if the  pitch is too low.
+    if obs[0] > 0.785398 or obs[0] < -0.785398:
+        env.stop()
+        break()
+
+    # get the action.
+    action, _states = model.predict(obs)
+    # take the action.
+    env.step(action)
+
+    # delay by update time.
     env.update100Hz()
+
+
+# once we are done, close the environment.
 env.stop()

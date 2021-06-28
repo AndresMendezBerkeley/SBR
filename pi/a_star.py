@@ -26,9 +26,16 @@ class AStar:
     # A delay of 0.0001 (100 us) after each write is enough to account
     # for the worst-case situation in our example code.
     AStar.lock.acquire()
-    self.bus.write_byte(SLAVE_ADDRESS, address)
-    time.sleep(0.0001)
-    byte_list = [self.bus.read_byte(SLAVE_ADDRESS) for _ in range(size)]
+    flag = 1
+    while flag == 1:
+      try:
+        self.bus.write_byte(SLAVE_ADDRESS, address)
+        time.sleep(0.0001)
+        byte_list = [self.bus.read_byte(SLAVE_ADDRESS) for _ in range(size)]
+        flag = 0
+      except IOError:
+        subprocess.call(['i2cdetect', '-y', '1'])
+        flag = 1
     AStar.lock.release()
     return struct.unpack(format, bytes(byte_list))
 
